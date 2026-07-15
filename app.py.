@@ -69,56 +69,61 @@ for r in range(rows):
 st.markdown("---")
 
 # --- SECCIÓN 2: FORMULARIO DE REGISTRO ---
+# Usamos un contenedor vacío para evitar conflictos en el DOM al ocultar/mostrar elementos
+form_container = st.container()
+
 if 'selected_num' in st.session_state:
     num = st.session_state.selected_num
-    st.write(f"### 📝 Registrar/Editar Boleto N° {num}")
-    
-    # Obtener datos existentes si los hay
-    current_data = db.get(num, {"name": "", "phone": "", "status": "Libre", "coupon": "Activo"})
-    
-    # Campos del formulario
-    name = st.text_input("Nombre del Cliente", value=current_data["name"])
-    phone = st.text_input("Teléfono (WhatsApp - Ej: 593999999999)", value=current_data["phone"])
-    status = st.selectbox("Estado del Boleto", ["Libre", "Reservado", "Vendido"], index=["Libre", "Reservado", "Vendido"].index(current_data["status"]))
-    
-    coupon = "Activo"
-    if status == "Vendido":
-        coupon = st.selectbox("Estado del Cupón ($10)", ["Activo", "Canjeado"], index=["Activo", "Canjeado"].index(current_data.get("coupon", "Activo")))
+    with form_container:
+        st.write(f"### 📝 Registrar/Editar Boleto N° {num}")
+        
+        # Obtener datos existentes si los hay
+        current_data = db.get(num, {"name": "", "phone": "", "status": "Libre", "coupon": "Activo"})
+        
+        # Campos del formulario
+        name = st.text_input("Nombre del Cliente", value=current_data["name"])
+        phone = st.text_input("Teléfono (WhatsApp - Ej: 593999999999)", value=current_data["phone"])
+        status = st.selectbox("Estado del Boleto", ["Libre", "Reservado", "Vendido"], index=["Libre", "Reservado", "Vendido"].index(current_data["status"]))
+        
+        coupon = "Activo"
+        if status == "Vendido":
+            coupon = st.selectbox("Estado del Cupón ($10)", ["Activo", "Canjeado"], index=["Activo", "Canjeado"].index(current_data.get("coupon", "Activo")))
 
-    # Botón para Guardar Registro
-    if st.button("💾 Guardar Registro", type="primary"):
-        if status == "Libre":
-            if num in db:
-                del db[num]
-            st.success(f"Número {num} liberado con éxito.")
-        else:
-            if not name:
-                st.error("Por favor, ingresa el nombre del cliente.")
+        # Botón para Guardar Registro
+        if st.button("💾 Guardar Registro", type="primary", key="save_btn"):
+            if status == "Libre":
+                if num in db:
+                    del db[num]
+                st.success(f"Número {num} liberado con éxito.")
             else:
-                db[num] = {
-                    "name": name,
-                    "phone": phone,
-                    "status": status,
-                    "coupon": coupon,
-                }
-                st.success(f"¡Registro del Número {num} guardado exitosamente!")
-        
-        # Guardar en sesión y recargar métricas
-        st.session_state.db = db
-        del st.session_state.selected_num
-        st.rerun()
+                if not name:
+                    st.error("Por favor, ingresa el nombre del cliente.")
+                else:
+                    db[num] = {
+                        "name": name,
+                        "phone": phone,
+                        "status": status,
+                        "coupon": coupon
+                    }
+                    st.success(f"¡Registro del Número {num} guardado exitosamente!")
+            
+            # Guardar en sesión
+            st.session_state.db = db
+            # Eliminamos la selección y dejamos que Streamlit recargue de forma segura
+            st.session_state.pop('selected_num', None)
+            st.rerun()
 
-    # Generar Mensaje de WhatsApp si está Reservado o Vendido
-    if status != "Libre" and name and phone:
-        if status == "Reservado":
-            msg = f"¡Hola, {name}! Tu número *{num}* para el Gran Sorteo de *D'Orland* ha sido RESERVADO. Recuerda realizar tu transferencia de $10 para asegurar tu boleto y activar tu cupón. ¡Mucha suerte! 👟✨"
-        else:
-            msg = f"¡Hola, {name}! Confirmamos el pago de tu boleto N° *{num}* para nuestro Gran Sorteo. Tu cupón de descuento de *$10.00* ya está ACTIVO para tu siguiente compra en *D'Orland*. ¡Gracias por tu confianza! 🏆🎉"
-        
-        # Crear link de WhatsApp
-        encoded_msg = urllib.parse.quote(msg)
-        wa_url = f"https://wa.me/{phone.strip('+')}?text={encoded_msg}"
-        st.markdown(f"[📱 Enviar Confirmación por WhatsApp]({wa_url})")
+        # Generar Mensaje de WhatsApp si está Reservado o Vendido
+        if status != "Libre" and name and phone:
+            if status == "Reservado":
+                msg = f"¡Hola, {name}! Tu número *{num}* para el Gran Sorteo de *D'Orland* ha sido RESERVADO. Recuerda realizar tu transferencia de $10 para asegurar tu boleto y activar tu cupón. ¡Mucha suerte! 👟✨"
+            else:
+                msg = f"¡Hola, {name}! Confirmamos el pago de tu boleto N° *{num}* para nuestro Gran Sorteo. Tu cupón de descuento de *$10.00* ya está ACTIVO para tu siguiente compra en *D'Orland*. ¡Gracias por tu confianza! 🏆🎉"
+            
+            # Crear link de WhatsApp
+            encoded_msg = urllib.parse.quote(msg)
+            wa_url = f"https://wa.me/{phone.strip('+')}?text={encoded_msg}"
+            st.markdown(f"[📱 Enviar Confirmación por WhatsApp]({wa_url})")
 
 st.markdown("---")
 
@@ -139,4 +144,3 @@ if db:
     st.dataframe(df.set_index("Número"), use_container_width=True)
 else:
     st.info("No hay ventas registradas todavía.")
-
