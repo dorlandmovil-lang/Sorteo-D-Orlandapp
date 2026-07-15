@@ -1,0 +1,142 @@
+import streamlit as st
+import pandas as pd
+import urllib.parse
+
+# Configuración de la página
+st.set_page_config(
+    page_title="D'Orland - Gestión de Sorteos",
+    page_icon="👟",
+    layout="centered"
+)
+
+# Inicializar la "base de datos" simulada en el estado de la sesión
+if 'db' not in st.session_state:
+    st.session_state.db = {}
+
+# Constantes de la campaña
+TOTAL_NUMBERS = 104
+TICKET_PRICE = 10.0
+
+# --- LÓGICA DE CÁLCULO DE ESTADÍSTICAS ---
+db = st.session_state.db
+sold_tickets = [num for num, data in db.items() if data['status'] == 'Vendido']
+pending_tickets = [num for num, data in db.items() if data['status'] == 'Reservado']
+
+total_sold = len(sold_tickets)
+total_revenue = total_sold * TICKET_PRICE
+active_coupons = len([num for num, data in db.items() if data['status'] == 'Vendido' and data['coupon'] == 'Activo'])
+total_pending_coupons_value = active_coupons * TICKET_PRICE
+
+# --- INTERFAZ DE USUARIO ---
+st.title("👟 D'Orland - Panel de Control")
+st.subheader("Gestión de Boletos y Cupones de Descuento")
+
+# Indicadores rápidos (Métricas)
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric(label="Boletos Vendidos", value=f"{total_sold} / {TOTAL_NUMBERS}")
+with col2:
+    st.metric(label="Recaudación", value=f"${total_revenue:.2f}")
+with col3:
+    st.metric(label="Cupones por Canjear", value=f"${total_pending_coupons_value:.2f}")
+
+st.markdown("---")
+
+# --- SECCIÓN 1: GRILLA INTERACTIVA ---
+st.write("### 🟢 Selecciona un Número de la Grilla (1 al 104)")
+
+# Crear la grilla visual con columnas
+cols_per_row = 8
+rows = (TOTAL_NUMBERS // cols_per_row) + (1 if TOTAL_NUMBERS % cols_per_row != 0 else 0)
+
+for r in range(rows):
+    cols = st.columns(cols_per_row)
+    for c in range(cols_per_row):
+        num = r * cols_per_row + c + 1
+        if num <= TOTAL_NUMBERS:
+            # Determinar color/estado del botón
+            if num in sold_tickets:
+                label = f"🔴 {num}"
+            elif num in pending_tickets:
+                label = f"🟡 {num}"
+            else:
+                label = f"🟢 {num}"
+            
+            # Al presionar el botón de un número, se abre el formulario de edición
+            if cols[c].button(label, key=f"btn_{num}", use_container_width=True):
+                st.session_state.selected_num = num
+
+st.markdown("---")
+
+# --- SECCIÓN 2: FORMULARIO DE REGISTRO ---
+if 'selected_num' in st.session_state:
+    num = st.session_state.selected_num
+    st.write(f"### 📝 Registrar/Editar Boleto N° {num}")
+    
+    # Obtener datos existentes si los hay
+    current_data = db.get(num, {"name": "", "phone": "", "status": "Libre", "coupon": "Activo"})
+    
+    # Campos del formulario
+    name = st.text_input("Nombre del Cliente", value=current_data["name"])
+    phone = st.text_input("Teléfono (WhatsApp - Ej: 593999999999)", value=current_data["phone"])
+    status = st.selectbox("Estado del Boleto", ["Libre", "Reservado", "Vendido"], index=["Libre", "Reservado", "Vendido"].index(current_data["status"]))
+    
+    coupon = "Activo"
+    if status == "Vendido":
+        coupon = st.selectbox("Estado del Cupón ($10)", ["Activo", "Canjeado"], index=["Activo", "Canjeado"].index(current_data.get("coupon", "Activo")))
+
+    # Botón para Guardar Registro
+    if st.button("💾 Guardar Registro", type="primary"):
+        if status == "Libre":
+            if num in db:
+                del db[num]
+            st.success(f"Número {num} liberado con éxito.")
+        else:
+            if not name:
+                st.error("Por favor, ingresa el nombre del cliente.")
+            else:
+                db[num] = {
+                    "name": name,
+                    "phone": phone,
+                    "status": status,
+                    "coupon": coupon,
+                }
+                st.success(f"¡Registro del Número {num} guardado exitosamente!")
+        
+        # Guardar en sesión y recargar métricas
+        st.session_state.db = db
+        del st.session_state.selected_num
+        st.rerun()
+
+    # Generar Mensaje de WhatsApp si está Reservado o Vendido
+    if status != "Libre" and name and phone:
+        if status == "Reservado":
+            msg = f"¡Hola, {name}! Tu número *{num}* para el Gran Sorteo de *D'Orland* ha sido RESERVADO. Recuerda realizar tu transferencia de $10 para asegurar tu boleto y activar tu cupón. ¡Mucha suerte! 👟✨"
+        else:
+            msg = f"¡Hola, {name}! Confirmamos el pago de tu boleto N° *{num}* para nuestro Gran Sorteo. Tu cupón de descuento de *$10.00* ya está ACTIVO para tu siguiente compra en *D'Orland*. ¡Gracias por tu confianza! 🏆🎉"
+        
+        # Crear link de WhatsApp
+        encoded_msg = urllib.parse.quote(msg)
+        wa_url = f"https://wa.me/{phone.strip('+')}?text={encoded_msg}"
+        st.markdown(f"[📱 Enviar Confirmación por WhatsApp]({wa_url})")
+
+st.markdown("---")
+
+# --- SECCIÓN 3: LISTADO DE CLIENTES Y CONTROL DE CANJES ---
+st.write("### 📋 Historial de Clientes y Cupones")
+if db:
+    records = []
+    for num, data in db.items():
+        records.append({
+            "Número": num,
+            "Cliente": data["name"],
+            "Teléfono": data["phone"],
+            "Boleto": "🔴 Vendido" if data["status"] == "Vendido" else "🟡 Reservado",
+            "Cupón": "🟢 Activo ($10)" if data.get("coupon") == "Activo" else ("🔴 Canjeado" if data["status"] == "Vendido" else "N/A")
+        })
+    
+    df = pd.DataFrame(records)
+    st.dataframe(df.set_index("Número"), use_container_width=True)
+else:
+    st.info("No hay ventas registradas todavía.")
+
